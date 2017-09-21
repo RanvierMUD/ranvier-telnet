@@ -1,0 +1,22 @@
+{
+  "name": "ranvier-telnet",
+  "version": "1.0.0",
+  "description": "Telnet server and socket with GMCP support",
+  "main": "index.js",
+  "engines" : { "node" : ">=7" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shawncplus/ranvier-telnet.git"
+  },
+  "keywords": [
+    "telnet",
+    "mud",
+    "gcmp"
+  ],
+  "author": "Shawn Biddle <shawncplus@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/shawncplus/ranvier-telnet/issues"
+  },
+  "homepage": "https://github.com/shawncplus/ranvier-telnet#readme"
+}
