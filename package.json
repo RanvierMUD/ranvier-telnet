@@ -1,6 +1,6 @@
 {
   "name": "ranvier-telnet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Telnet server and socket with GMCP support",
   "main": "index.js",
   "engines" : { "node" : ">=7" },

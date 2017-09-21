@@ -80,7 +80,7 @@ class TelnetSocket extends EventEmitter
         this.socket.write(data);
       }
     } catch (e) {
-      console.log(e);
+      this.emit('error', e);
     }
   }
 
@@ -274,17 +274,17 @@ class TelnetSocket extends EventEmitter
           break;
         case Seq.SB:
           i += 2;
-          subnegOpt = inputBuf[i++];
-          subnegBuffer = Buffer.alloc(inputbuf.length - i);
+          subnegOpt = inputbuf[i++];
+          subnegBuffer = Buffer.alloc(inputbuf.length - i, ' ');
 
           let sublen = 0;
           while (inputbuf[i] !== Seq.IAC) {
-            subBuf[sublen++] = inputBuf[i++];
+            subnegBuffer[sublen++] = inputbuf[i++];
           }
           break;
         case Seq.SE:
           if (subnegOpt === Opts.OPT_GMCP) {
-            let gmcpString = subBuffer.toString();
+            let gmcpString = subnegBuffer.toString().trim();
             let [gmcpPackage, ...gmcpData] = gmcpString.split(' ');
             gmcpData = gmcpData.join(' ');
             gmcpData = gmcpData.length ? JSON.parse(gmcpData) : null;
