@@ -8,7 +8,7 @@ Node >= 7
 
 ```javascript
 const Telnet = require('ranvier-telnet');
-const server = new Telnet.TelnetServer({}, rawSocket => {
+const server = new Telnet.TelnetServer(rawSocket => {
   const telnetSocket = new Telnet.TelnetSocket();
   telnetSocket.attach(rawSocket);
 
