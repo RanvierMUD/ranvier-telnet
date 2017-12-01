@@ -342,14 +342,6 @@ class TelnetServer
       socket.fresh = true;
       listener(socket);
     });
-
-    this.netServer.on('error', error => {
-      this.emit('error', error);
-    });
-
-    this.netServer.on('uncaughtException', error => {
-      this.emit('uncaughtException', error);
-    });
   }
 }
 
