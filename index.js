@@ -170,11 +170,13 @@ class TelnetSocket extends EventEmitter
       // them separately. Some client auto-connect features do this
       let bucket = [];
       for (let i = 0; i < inputlen; i++) {
-        if (databuf[i] !== 10) { // \n
+        if (databuf[i] !== 10 && databuf[i] !== 13) { // neither LF nor CR
           bucket.push(databuf[i]);
         } else {
-          this.input(Buffer.from(bucket));
-          bucket = [];
+          if (bucket.length) {
+            this.input(Buffer.from(bucket));
+            bucket = [];
+          }
         }
       }
 
@@ -325,7 +327,7 @@ class TelnetSocket extends EventEmitter
      * @event TelnetSocket#data
      * @param {Buffer} data
      */
-    this.emit('data', cleanbuf.slice(0, cleanlen - 1));
+    this.emit('data', cleanbuf.slice(0, cleanlen >= cleanbuf.length ? undefined : cleanlen));  // special processing required for slice() to work.
   }
 }
 
