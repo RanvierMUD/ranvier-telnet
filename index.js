@@ -321,11 +321,16 @@ class TelnetSocket extends EventEmitter
       return;
     }
 
+    // strip '\r' if the last byte
+    if (cleanbuf[cleanlen - 1] == 13) {
+      cleanbuf = cleanbuf.slice(0, cleanlen - 1);
+    }
+
     /**
      * @event TelnetSocket#data
      * @param {Buffer} data
      */
-    this.emit('data', cleanbuf.slice(0, cleanlen - 1));
+    this.emit('data', cleanbuf);
   }
 }
 
