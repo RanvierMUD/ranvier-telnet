@@ -224,7 +224,11 @@ class TelnetSocket extends EventEmitter
 
     while (i < inputbuf.length) {
       if (inputbuf[i] !== Seq.IAC) {
-        cleanbuf[cleanlen++] = inputbuf[i++];
+        if (inputbuf[i] < 32) { // Skip any freaky control codes.
+          i++;
+        } else {
+          cleanbuf[cleanlen++] = inputbuf[i++];
+        }
         continue;
       }
 
