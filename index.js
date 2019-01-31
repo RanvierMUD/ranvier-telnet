@@ -173,10 +173,13 @@ class TelnetSocket extends EventEmitter
         if (databuf[i] !== 10 && databuf[i] !== 13) { // neither LF nor CR
           bucket.push(databuf[i]);
         } else {
-          if (bucket.length) {
-            this.input(Buffer.from(bucket));
-            bucket = [];
+          // look ahead to see if our newline delimiter is part of a combo.
+          if (i+1 < inputlen && (databuf[i+1] === 10 || databuf[i+1 === 13])
+            && databuf[i] !== databuf[i+1]) {
+            i++;
           }
+          this.input(Buffer.from(bucket));
+          bucket = [];
         }
       }
 
