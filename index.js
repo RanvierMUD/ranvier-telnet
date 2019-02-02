@@ -34,6 +34,7 @@ class TelnetSocket extends EventEmitter
     this.maxInputLength = opts.maxInputLength || 512;
     this.echoing = true;
     this.gaMode = null;
+    this.gmcpData = null;
   }
 
   get readable() {
@@ -149,6 +150,11 @@ class TelnetSocket extends EventEmitter
     connection.on('error', err => this.emit('error', err));
 
     this.socket.write("\r\n");
+    // Obtain GMCP client info.
+    this.telnetCommand(Seq.WILL, Opts.OPT_GMCP);
+    this.once('gmcp', (gmcpPackage, gmcpData) => {
+      this.gmcpData = gmcpData;
+    });
     connection.on('data', (databuf) => {
       databuf.copy(inputbuf, inputlen);
       inputlen += databuf.length;
