@@ -53,9 +53,14 @@ class TelnetSocket extends EventEmitter {
         this.socket.end(string, enc);
     }
 
-    write(data, encoding) {
+    /**
+     * Write data
+     * @param {string|Buffer} data The data to write
+     * @param {string} encoding The encoding type
+     */
+    write(data, encoding = 'utf8') {
         if (!Buffer.isBuffer(data)) {
-            data = new Buffer(data, encoding);
+            data = Buffer.alloc(Buffer.byteLength(data), data, encoding);
         }
 
         // escape IACs by duplicating
@@ -67,7 +72,7 @@ class TelnetSocket extends EventEmitter {
         }
 
         if (iacs) {
-            let b = new Buffer(data.length + iacs);
+            let b = Buffer.alloc(data.length + iacs);
             for (let i = 0, j = 0; i < data.length; i++) {
                 b[j++] = data[i];
                 if (data[i] === Seq.IAC) {
@@ -114,7 +119,7 @@ class TelnetSocket extends EventEmitter {
             seq.push(command);
         }
 
-        this.socket.write(new Buffer(seq));
+        this.socket.write(Buffer.from(seq));
     }
 
     toggleEcho() {
@@ -132,15 +137,15 @@ class TelnetSocket extends EventEmitter {
     sendGMCP(gmcpPackage, data) {
         const gmcpData = gmcpPackage + ' ' + JSON.stringify(data);
         const dataBuffer = Buffer.from(gmcpData);
-        const seqStartBuffer = new Buffer([Seq.IAC, Seq.SB]);
-        const seqEndBuffer = new Buffer([Seq.IAC, Seq.SE]);
+        const seqStartBuffer = Buffer.from([Seq.IAC, Seq.SB, Opts.OPT_GMCP]);
+        const seqEndBuffer = Buffer.from([Seq.IAC, Seq.SE]);
 
-        this.socket.write(Buffer.concat([seqStartBuffer, dataBuffer, seqEndBuffer], gmcpData.length + 4));
+        this.socket.write(Buffer.concat([seqStartBuffer, dataBuffer, seqEndBuffer], gmcpData.length + 5));
     }
 
     attach(connection) {
         this.socket = connection;
-        let inputbuf = new Buffer(this.maxInputLength);
+        let inputbuf = Buffer.alloc(this.maxInputLength);
         let inputlen = 0;
 
         /**
@@ -186,7 +191,7 @@ class TelnetSocket extends EventEmitter {
                 this.input(Buffer.from(bucket));
             }
 
-            inputbuf = new Buffer(this.maxInputLength);
+            inputbuf = Buffer.alloc(this.maxInputLength);
             inputlen = 0;
         });
 
