@@ -1,30 +1,64 @@
+/**
+    Copyright (c) 2017 Shawn Biddle, http://shawnbiddle.com/
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+    LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+    Changes made since "branching" from original by ShawnCPlus:
+        * Made objects MUD emitters.
+        * Added NAWS support (12/24)
+        * Added TTYPE support (12/25)
+*/
 'use strict';
 
-const EventEmitter = require('events');
-const net = require('net');
+const
+    net = require('net'),
+    zlib = require('zlib'),
+    EventEmitter = require('events');
 
 // see: arpa/telnet.h
 const Seq = {
-  IAC     : 255,
-  DONT    : 254,
-  DO      : 253,
-  WONT    : 252,
-  WILL    : 251,
-  SB      : 250,
-  SE      : 240,
-  GA      : 249,
-  EOR     : 239,
+    IAC:    255,
+    DONT:   254,
+    DO:     253,
+    WONT:   252,
+    WILL:   251,
+    SB:     250,
+    SE:     240,
+    GA:     249,
+    EOR:    239
 };
 
 exports.Sequences = Seq;
 
 const Opts = {
-  OPT_ECHO: 1,
-  OPT_TTYPE: 24,
-  OPT_EOR : 25,
-  OPT_NAWS : 31,
-  OPT_GMCP: 201,
-}
+    OPT_ECHO: 1,
+    OPT_TTYPE: 24,
+    OPT_EOR: 25,
+    OPT_NAWS: 31,
+    OPT_ENV: 39,
+    OPT_MCP1: 85, // MCP v1 - Obsolete
+    OPT_MCCP: 86, // MCP v2 http://www.zuggsoft.com/zmud/mcp.htm
+    OPT_MSP: 90, // MUD Sound Protocol
+    OPT_MXP: 91, // MUD eXtension Protocol
+    OPT_GMCP: 201
+};
 
 exports.Options = Opts;
 
@@ -35,10 +69,23 @@ class TelnetSocket extends EventEmitter {
         this.maxInputLength = opts.maxInputLength || 512;
         this.echoing = true;
         this.gaMode = null;
+
+        this.mccp = false;
+        this.msp = false;
+        this.mxp = false;
+
+        this.offerGMCP = opts.offerGMCP || false;
+        this.offerMCP = opts.offerMCP || false;
+        this.offerMSP = opts.offerMSP || false;
+        this.offerMXP = opts.offerMXP || false;
     }
 
     get readable() {
         return this.socket.readable;
+    }
+
+    get remoteAddress() {
+        return this.socket && this.socket.remoteAddress;
     }
 
     get writable() {
@@ -53,14 +100,26 @@ class TelnetSocket extends EventEmitter {
         this.socket.end(string, enc);
     }
 
+    transmit(data) {
+        if (!this.socket.ended && !this.socket.finished) {
+            if (this.mccp) {
+                let compressedData = zlib.deflateSync(data);
+                return this.socket.write(compressedData);
+            }
+            else {
+                return this.socket.write(data);
+            }
+        }
+    }
+
     /**
-     * Write data
-     * @param {string|Buffer} data The data to write
-     * @param {string} encoding The encoding type
+     * Write data to the socket.
+     * @param {string|Buffer} data The data to write to the socket
+     * @param {string} encoding The encoding to use
      */
     write(data, encoding = 'utf8') {
         if (!Buffer.isBuffer(data)) {
-            data = Buffer.alloc(Buffer.byteLength(data), data, encoding);
+            data = Buffer.from(data, encoding);
         }
 
         // escape IACs by duplicating
@@ -82,12 +141,11 @@ class TelnetSocket extends EventEmitter {
         }
 
         try {
-            if (!this.socket.ended && !this.socket.finished) {
-                this.socket.write(data);
-            }
+            return this.transmit(data);
         } catch (e) {
             this.emit('error', e);
         }
+        return false;
     }
 
     setEncoding(encoding) {
@@ -119,11 +177,11 @@ class TelnetSocket extends EventEmitter {
             seq.push(command);
         }
 
-        this.socket.write(Buffer.from(seq));
+        this.transmit(Buffer.from(seq));
     }
 
-    toggleEcho() {
-        this.echoing = !this.echoing;
+    toggleEcho(flag) {
+        this.echoing = typeof flag === 'boolean' ? flag : !this.echoing;
         this.telnetCommand(this.echoing ? Seq.WONT : Seq.WILL, Opts.OPT_ECHO);
     }
 
@@ -152,11 +210,20 @@ class TelnetSocket extends EventEmitter {
          * @event TelnetSocket#error
          * @param {Error} err
          */
-        connection.on('error', err => this.emit('error', err));
+        connection.on('error', err => {
+            if (err.code === 'ECONNRESET') {
+                // Belay that order...
+                return;
+            }
+            this.emit('error', err);
+        });
 
         this.telnetCommand(Seq.DO, Opts.OPT_NAWS);
         this.telnetCommand(Seq.DO, Opts.OPT_TTYPE);
-        this.socket.write("\r\n");
+        if (this.offerMCP) this.telnetCommand(Seq.WILL, Opts.OPT_MCCP);
+        if (this.offerMSP) this.telnetCommand(Seq.WILL, Opts.OPT_MSP);
+        if (this.offerMXP) this.telnetCommand(Seq.WILL, Opts.OPT_MXP);
+        this.transmit(Buffer.from("\r\n"));
 
         connection.on('data', (databuf) => {
             databuf.copy(inputbuf, inputlen);
@@ -179,6 +246,9 @@ class TelnetSocket extends EventEmitter {
             // them separately. Some client auto-connect features do this
             let bucket = [];
             for (let i = 0; i < inputlen; i++) {
+                if (databuf[i] === 3) { // ctrl-c
+                    continue; //eat it
+                }
                 if (databuf[i] !== 10) { // \n
                     bucket.push(databuf[i]);
                 } else {
@@ -201,6 +271,8 @@ class TelnetSocket extends EventEmitter {
              */
             this.emit('close');
         });
+
+        return this;
     }
 
     /**
@@ -234,12 +306,31 @@ class TelnetSocket extends EventEmitter {
 
             const cmd = inputbuf[i + 1];
             const opt = inputbuf[i + 2];
+
             switch (cmd) {
                 case Seq.DO:
                     switch (opt) {
                         case Opts.OPT_EOR:
                             this.gaMode = Seq.EOR;
                             break;
+
+                        case Opts.OPT_MCCP:
+                            this.telnetCommand(Seq.SB, [Opts.OPT_MCCP, Seq.IAC, Seq.SE]);
+                            this.mccp = true;
+                            break;
+
+                        case Opts.OPT_MSP:
+                            this.telnetCommand(Seq.SB, [Opts.OPT_MXP, Seq.IAC, Seq.SE ]);
+                            this.msp = true;
+                            break;
+
+                        case Opts.OPT_MXP:
+                            i += 2;
+                            subnegOpt = inputbuf[i++];
+                            subnegBuffer = Buffer.alloc(inputbuf.length - i, ' ');
+                            this.mxp = true;
+                            break;
+
                         default:
                             /**
                              * @event TelnetSocket#DO
@@ -250,10 +341,15 @@ class TelnetSocket extends EventEmitter {
                     }
                     i += 3;
                     break;
+
                 case Seq.DONT:
                     switch (opt) {
                         case Opts.OPT_EOR:
                             this.gaMode = Seq.GA;
+                            break;
+                        case Opts.OPT_MCCP:
+                            if (this.mcp === 2) this.mcp = 0;
+                            break;
                             break;
                         default:
                             /**
@@ -264,19 +360,21 @@ class TelnetSocket extends EventEmitter {
                     }
                     i += 3;
                     break;
+
                 case Seq.WILL:
                     /**
                      * @event TelnetSocket#WILL
                      * @param {number} opt
                      */
-                    this.emit('WILL', opt);
                     switch (opt) {
                         case Opts.OPT_TTYPE:
                             this.telnetCommand(Seq.SB, [Opts.OPT_TTYPE, 1, Seq.IAC, Seq.SE]);
                             break;
                     }
+                    this.emit('WILL', opt);
                     i += 3;
                     break;
+
                 /* falls through */
                 case Seq.WONT:
                     /**
@@ -286,6 +384,7 @@ class TelnetSocket extends EventEmitter {
                     this.emit('WONT', opt);
                     i += 3;
                     break;
+
                 case Seq.SB:
                     i += 2;
                     subnegOpt = inputbuf[i++];
@@ -295,20 +394,24 @@ class TelnetSocket extends EventEmitter {
                     while (inputbuf[i] !== Seq.IAC) {
                         subnegBuffer[sublen++] = inputbuf[i++];
                     }
+
                     switch (opt) {
+                        case Opts.OPT_MXP:
                         case Opts.OPT_TTYPE:
                             {
                                 let tte = {
                                     terminalType: subnegBuffer.slice(1).toString('utf8').trim()
                                 };
-                                if (tte.terminalType && typeof tte.terminalType !== 'undefined') {
-                                    this.emit('TTYPE', tte);
-                                    this.telnetCommand(Seq.SB, [Opts.OPT_TTYPE, 1, Seq.IAC, Seq.SE]);
+                                if (tte.terminalType) {
+                                    this.emit('terminal type', tte);
+                                    if (typeof tte.terminalType !== 'undefined')
+                                        this.telnetCommand(Seq.SB, [Opts.OPT_TTYPE, 1, Seq.IAC, Seq.SE]);
                                 }
                             }
                             break;
                     }
                     break;
+
                 case Seq.SE:
                     if (subnegOpt === Opts.OPT_GMCP) {
                         let gmcpString = subnegBuffer.toString().trim();
@@ -321,12 +424,14 @@ class TelnetSocket extends EventEmitter {
                          * @param {*} gmcpData
                          */
                         this.emit('GMCP', gmcpPackage, gmcpData);
-                    } else if (subnegOpt === Opts.OPT_NAWS) {
-                        this.emit('NAWS', {
+                    }
+                    else if (subnegOpt === Opts.OPT_NAWS) {
+                        this.emit('window size', {
                             width: subnegBuffer.readInt16BE(0),
                             height: subnegBuffer.readInt16BE(2)
                         });
-                    } else {
+                    }
+                    else {
                         /**
                          * @event TelnetSocket#SUBNEG
                          * @param {number} subnegOpt SB option
@@ -336,6 +441,7 @@ class TelnetSocket extends EventEmitter {
                     }
                     i += 2;
                     break;
+
                 default:
                     /**
                      * @event TelnetSocket#unknownAction
@@ -365,11 +471,11 @@ exports.TelnetSocket = TelnetSocket;
 
 class TelnetServer extends EventEmitter {
     /**
-     * @param {object}   streamOpts options for the stream @see TelnetSocket
      * @param {function} listener   connected callback
      */
     constructor(listener) {
         super();
+
         this.netServer = net.createServer({}, (socket) => {
             socket.fresh = true;
             listener(socket);
@@ -389,6 +495,9 @@ class TelnetServer extends EventEmitter {
     }
 }
 
+/**
+ * @param {function} listener A callback that fires when a new connection is established.
+ */
 TelnetServer.createServer = function (listener) {
     return new TelnetServer(listener);
 };
@@ -396,4 +505,3 @@ TelnetServer.createServer = function (listener) {
 exports.TelnetServer = TelnetServer;
 
 // vim:ts=2:sw=2:et:
-
